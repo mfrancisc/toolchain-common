@@ -3,6 +3,7 @@ package configuration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -120,7 +121,7 @@ func TestLoadFromSecret(t *testing.T) {
 		data := map[string][]byte{
 			"special.key": []byte("special-value"),
 		}
-		cl := test.NewFakeClient(t, createSecret("test-secret", "toolchain-host-operator", data))
+		cl := test.NewFakeClient(t, test.CreateSecret("test-secret", "toolchain-host-operator", data))
 
 		// when
 		secretData, err := LoadFromSecret("HOST_OPERATOR_SECRET_NAME", cl)
@@ -137,7 +138,7 @@ func TestLoadFromSecret(t *testing.T) {
 		data := map[string][]byte{
 			"test.key.secret": []byte("test-value-secret"),
 		}
-		cl := test.NewFakeClient(t, createSecret("test-secret", "toolchain-host-operator", data))
+		cl := test.NewFakeClient(t, test.CreateSecret("test-secret", "toolchain-host-operator", data))
 
 		cl.MockGet = func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 			return errors.New("oopsie woopsie")
@@ -161,7 +162,7 @@ func TestLoadFromSecret(t *testing.T) {
 		data := map[string][]byte{
 			"test.key": []byte("test-value"),
 		}
-		cl := test.NewFakeClient(t, createSecret("test-secret", "toolchain-host-operator", data))
+		cl := test.NewFakeClient(t, test.CreateSecret("test-secret", "toolchain-host-operator", data))
 
 		// when
 		secretData, err := LoadFromSecret("HOST_OPERATOR_SECRET_NAME", cl)
@@ -184,7 +185,7 @@ func TestNoWatchNamespaceSetWhenLoadingSecret(t *testing.T) {
 		data := map[string][]byte{
 			"test.key": []byte("test-value"),
 		}
-		cl := test.NewFakeClient(t, createSecret("test-secret", "toolchain-host-operator", data))
+		cl := test.NewFakeClient(t, test.CreateSecret("test-secret", "toolchain-host-operator", data))
 
 		// when
 		secretData, err := LoadFromSecret("HOST_OPERATOR_SECRET_NAME", cl)
@@ -216,14 +217,122 @@ func TestNoWatchNamespaceSetWhenLoadingConfigMap(t *testing.T) {
 	})
 }
 
-func createSecret(name, namespace string, data map[string][]byte) *v1.Secret { //nolint: unparam
-	return &v1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
-		},
-		Data: data,
+func TestLoadSecrets(t *testing.T) {
+	secretData := map[string][]byte{
+		"che-admin-username": []byte("cheadmin"),
+		"che-admin-password": []byte("password"),
 	}
+	secretData2 := map[string][]byte{
+		"che-admin-username2": []byte("cheadmin2"),
+		"che-admin-password2": []byte("password2"),
+	}
+
+	t.Run("one secret found", func(t *testing.T) {
+		// given
+		secret := test.CreateSecret("che-secret", test.MemberOperatorNs, secretData)
+		cl := test.NewFakeClient(t, secret)
+
+		// when
+		secrets, err := LoadSecrets(cl, test.MemberOperatorNs)
+
+		// then
+		expected := map[string]string{
+			"che-admin-username": "cheadmin",
+			"che-admin-password": "password",
+		}
+		require.NoError(t, err)
+		require.Equal(t, expected, secrets["che-secret"])
+	})
+
+	t.Run("two secrets found", func(t *testing.T) {
+		// given
+		secret := test.CreateSecret("che-secret", test.MemberOperatorNs, secretData)
+		secret2 := test.CreateSecret("che-secret2", test.MemberOperatorNs, secretData2)
+		cl := test.NewFakeClient(t, secret, secret2)
+
+		// when
+		secrets, err := LoadSecrets(cl, test.MemberOperatorNs)
+
+		// then
+		expected := map[string]string{
+			"che-admin-username": "cheadmin",
+			"che-admin-password": "password",
+		}
+		expected2 := map[string]string{
+			"che-admin-username2": "cheadmin2",
+			"che-admin-password2": "password2",
+		}
+		require.NoError(t, err)
+		require.Equal(t, expected, secrets["che-secret"])
+		require.Equal(t, expected2, secrets["che-secret2"])
+	})
+
+	t.Run("secrets from another namespace not listed", func(t *testing.T) {
+		// given
+		secret := test.CreateSecret("che-secret", test.MemberOperatorNs, secretData)
+		secret.Namespace = "default"
+		secret2 := test.CreateSecret("che-secret2", test.MemberOperatorNs, secretData2)
+		secret2.Namespace = "default"
+		cl := test.NewFakeClient(t, secret, secret2)
+
+		// when
+		secrets, err := LoadSecrets(cl, test.MemberOperatorNs)
+
+		// then
+		require.NoError(t, err)
+		require.Empty(t, secrets)
+	})
+
+	t.Run("service account secrets are not listed", func(t *testing.T) {
+		// given
+		secret := test.CreateSecret("che-secret", test.MemberOperatorNs, secretData)
+		secret.Annotations = map[string]string{
+			"kubernetes.io/service-account.name": "default-something",
+		}
+		secret2 := test.CreateSecret("che-secret2", test.MemberOperatorNs, secretData2)
+		secret2.Annotations = map[string]string{
+			"kubernetes.io/service-account.name": "builder-something",
+		}
+		secret3 := test.CreateSecret("che-secret3", test.MemberOperatorNs, secretData2)
+		secret3.Annotations = map[string]string{
+			"kubernetes.io/service-account.name": "deployer-something",
+		}
+		cl := test.NewFakeClient(t, secret, secret2, secret3)
+
+		// when
+		secrets, err := LoadSecrets(cl, test.MemberOperatorNs)
+
+		// then
+		require.NoError(t, err)
+		require.Empty(t, secrets)
+	})
+
+	t.Run("no secrets found", func(t *testing.T) {
+		// given
+		cl := test.NewFakeClient(t)
+
+		// when
+		secrets, err := LoadSecrets(cl, test.MemberOperatorNs)
+
+		// then
+		require.NoError(t, err)
+		require.Empty(t, secrets)
+	})
+
+	t.Run("list secrets error", func(t *testing.T) {
+		// given
+		cl := test.NewFakeClient(t)
+		cl.MockList = func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+			return fmt.Errorf("list error")
+		}
+
+		// when
+		secrets, err := LoadSecrets(cl, test.MemberOperatorNs)
+
+		// then
+		require.EqualError(t, err, "list error")
+		require.Empty(t, secrets)
+	})
 }
 
 func createConfigMap(name, namespace string, data map[string]string) *v1.ConfigMap { //nolint: unparam

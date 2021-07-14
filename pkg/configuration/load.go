@@ -129,6 +129,29 @@ func createOperatorEnvVarKey(prefix, key string) string {
 	return prefix + "_" + (strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(key, ".", "_"), "-", "_")))
 }
 
+// LoadSecrets lists all secrets in the provided namespace and indexes them into a map by name along with its secret data.
+// Service account secrets are skipped.
+func LoadSecrets(cl client.Client, namespace string) (map[string]map[string]string, error) {
+	var allSecrets = make(map[string]map[string]string)
+	secretList := &v1.SecretList{}
+	err := cl.List(context.TODO(), secretList, client.InNamespace(namespace))
+	if err != nil {
+		return allSecrets, err
+	}
+	for _, secret := range secretList.Items {
+		if _, ok := secret.Annotations["kubernetes.io/service-account.name"]; ok {
+			// skip service account secrets
+			continue
+		}
+		var secretData = make(map[string]string)
+		for key, value := range secret.Data {
+			secretData[key] = string(value)
+		}
+		allSecrets[secret.Name] = secretData
+	}
+	return allSecrets, err
+}
+
 // GetWatchNamespace returns the namespace the operator should be watching for changes
 func GetWatchNamespace() (string, error) {
 	ns, found := os.LookupEnv(WatchNamespaceEnvVar)
