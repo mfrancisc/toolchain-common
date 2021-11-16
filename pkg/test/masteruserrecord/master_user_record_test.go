@@ -319,3 +319,20 @@ func TestMasterUserRecordAssertion(t *testing.T) {
 
 	})
 }
+
+func TestTierNameModifier(t *testing.T) {
+
+	t.Run("distinct MURs should have distinct NSTemplateSets", func(t *testing.T) {
+		// given
+		mur1 := murtest.NewMasterUserRecord(t, "john", murtest.Finalizer("finalizer.toolchain.dev.openshift.com"))
+		mur2 := murtest.NewMasterUserRecord(t, "jack", murtest.Finalizer("finalizer.toolchain.dev.openshift.com"))
+
+		// when
+		murtest.ModifyUaInMur(mur1, test.MemberClusterName, murtest.TierName("admin"))
+
+		// then
+		assert.Equal(t, "admin", mur1.Spec.UserAccounts[0].Spec.NSTemplateSet.TierName) // modified
+		assert.Equal(t, "basic", mur2.Spec.UserAccounts[0].Spec.NSTemplateSet.TierName) // unmodified
+	})
+
+}
