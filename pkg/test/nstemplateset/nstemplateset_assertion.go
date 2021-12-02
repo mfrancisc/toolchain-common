@@ -45,6 +45,19 @@ func (a *Assertion) Exists() *Assertion {
 	return a
 }
 
+func (a *Assertion) HasDeletionTimestamp() *Assertion {
+	err := a.loadNSTemplateSet()
+	require.NoError(a.t, err)
+	assert.NotNil(a.t, a.nsTmplSet.DeletionTimestamp)
+	return a
+}
+
+func (a *Assertion) Get() *toolchainv1alpha1.NSTemplateSet {
+	err := a.loadNSTemplateSet()
+	require.NoError(a.t, err)
+	return a.nsTmplSet
+}
+
 func (a *Assertion) DoesNotExist() *Assertion {
 	err := a.loadNSTemplateSet()
 	require.Error(a.t, err)
