@@ -129,7 +129,7 @@ func (s *ToolchainClusterService) refreshCache() {
 		s.log.Error(err, "the cluster cache was not refreshed")
 	}
 	for i := range toolchainClusters.Items {
-		cluster := toolchainClusters.Items[i] // avoids the "G601: Implicit memory aliasing in for loop. (gosec)" problem
+		cluster := toolchainClusters.Items[i] // avoids the `G601: Implicit memory aliasing in for loop` problem
 		log := s.enrichLogger(&cluster)
 		err := s.addToolchainCluster(log, &cluster)
 		if err != nil {
@@ -213,9 +213,8 @@ func ListToolchainClusterConfigs(cl client.Client, namespace string, clusterType
 		return nil, err
 	}
 	var configs []*Config
-	for i := range toolchainClusters.Items {
-		cluster := toolchainClusters.Items[i] // avoids the "G601: Implicit memory aliasing in for loop. (gosec)" problem
-		clusterConfig, err := NewClusterConfig(cl, &cluster, timeout)
+	for _, cluster := range toolchainClusters.Items {
+		clusterConfig, err := NewClusterConfig(cl, &cluster, timeout) // nolint:gosec
 		if err != nil {
 			return nil, err
 		}
