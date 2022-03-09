@@ -20,20 +20,22 @@ type Option func(*toolchainv1alpha1.NSTemplateSet)
 
 func WithReferencesFor(nstemplateTier *toolchainv1alpha1.NSTemplateTier) Option {
 	return func(nstmplSet *toolchainv1alpha1.NSTemplateSet) {
-		namespaces := make([]toolchainv1alpha1.NSTemplateSetNamespace, len(nstemplateTier.Spec.Namespaces))
-		for i, ns := range nstemplateTier.Spec.Namespaces {
-			namespaces[i] = toolchainv1alpha1.NSTemplateSetNamespace(ns)
-		}
-		var clusterResources *toolchainv1alpha1.NSTemplateSetClusterResources
+		nstmplSet.Spec.TierName = nstemplateTier.Name
+
+		// cluster resources
 		if nstemplateTier.Spec.ClusterResources != nil {
-			clusterResources = &toolchainv1alpha1.NSTemplateSetClusterResources{
+			nstmplSet.Spec.ClusterResources = &toolchainv1alpha1.NSTemplateSetClusterResources{
 				TemplateRef: nstemplateTier.Spec.ClusterResources.TemplateRef,
 			}
 		}
 
-		nstmplSet.Spec.TierName = nstemplateTier.Name
-		nstmplSet.Spec.Namespaces = namespaces
-		nstmplSet.Spec.ClusterResources = clusterResources
+		// namespace resources
+		if len(nstemplateTier.Spec.Namespaces) > 0 {
+			nstmplSet.Spec.Namespaces = make([]toolchainv1alpha1.NSTemplateSetNamespace, len(nstemplateTier.Spec.Namespaces))
+			for i, ns := range nstemplateTier.Spec.Namespaces {
+				nstmplSet.Spec.Namespaces[i] = toolchainv1alpha1.NSTemplateSetNamespace(ns)
+			}
+		}
 	}
 }
 
