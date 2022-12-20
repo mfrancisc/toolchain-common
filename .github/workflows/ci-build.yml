@@ -33,7 +33,7 @@ jobs:
         flags: unittests # optional
         fail_ci_if_error: true # optional (default = false)
         verbose: true # optional (default = false)
-
+    
   golangci:
     name: GolangCI Lint
     runs-on: ubuntu-20.04
