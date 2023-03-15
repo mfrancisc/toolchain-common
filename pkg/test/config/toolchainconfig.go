@@ -509,6 +509,17 @@ func (o RegistrationVerificationSecretOption) AWSSecretAccessKey(value string) *
 	return &o
 }
 
+type SpaceConfigOption struct {
+	*ToolchainConfigOptionImpl
+}
+
+func (o SpaceConfigOption) SpaceRequestEnabled(value bool) SpaceConfigOption {
+	o.addFunction(func(config *toolchainv1alpha1.ToolchainConfig) {
+		config.Spec.Host.SpaceConfig.SpaceRequestEnabled = &value
+	})
+	return o
+}
+
 type TiersOption struct {
 	*ToolchainConfigOptionImpl
 }
