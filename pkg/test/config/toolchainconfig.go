@@ -513,6 +513,13 @@ type SpaceConfigOption struct {
 	*ToolchainConfigOptionImpl
 }
 
+func SpaceConfig() *SpaceConfigOption {
+	o := &SpaceConfigOption{
+		ToolchainConfigOptionImpl: &ToolchainConfigOptionImpl{},
+	}
+	return o
+}
+
 func (o SpaceConfigOption) SpaceRequestEnabled(value bool) SpaceConfigOption {
 	o.addFunction(func(config *toolchainv1alpha1.ToolchainConfig) {
 		config.Spec.Host.SpaceConfig.SpaceRequestEnabled = &value
