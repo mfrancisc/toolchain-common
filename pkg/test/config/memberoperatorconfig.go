@@ -191,6 +191,20 @@ func (o ConsoleOption) RouteName(value string) ConsoleOption {
 	return o
 }
 
+type MemberEnvironmentOption struct {
+	*MemberOperatorConfigOptionImpl
+}
+
+func MemberEnvironment(value string) *MemberEnvironmentOption {
+	o := &MemberEnvironmentOption{
+		MemberOperatorConfigOptionImpl: &MemberOperatorConfigOptionImpl{},
+	}
+	o.addFunction(func(config *toolchainv1alpha1.MemberOperatorConfig) {
+		config.Spec.Environment = &value
+	})
+	return o
+}
+
 type MemberStatusOption struct {
 	*MemberOperatorConfigOptionImpl
 }
@@ -208,6 +222,20 @@ func MemberStatus() *MemberStatusOption {
 func (o MemberStatusOption) RefreshPeriod(value string) MemberStatusOption {
 	o.addFunction(func(config *toolchainv1alpha1.MemberOperatorConfig) {
 		config.Spec.MemberStatus.RefreshPeriod = &value
+	})
+	return o
+}
+
+func (o MemberStatusOption) GitHubSecretRef(value string) MemberStatusOption {
+	o.addFunction(func(config *toolchainv1alpha1.MemberOperatorConfig) {
+		config.Spec.MemberStatus.GitHubSecret.Ref = &value
+	})
+	return o
+}
+
+func (o MemberStatusOption) GitHubSecretAccessTokenKey(value string) MemberStatusOption {
+	o.addFunction(func(config *toolchainv1alpha1.MemberOperatorConfig) {
+		config.Spec.MemberStatus.GitHubSecret.AccessTokenKey = &value
 	})
 	return o
 }
