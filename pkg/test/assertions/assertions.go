@@ -24,5 +24,6 @@ import (
 // to spot the failed predicate in the actual tests and the caller doesn't have to guess
 // which of the many supplied predicates might have failed.
 func AssertThat(t *testing.T, object client.Object, predicate Predicate[client.Object], msgAndArgs ...any) {
+	t.Helper()
 	assert.True(t, predicate.Matches(object), msgAndArgs...)
 }
