@@ -38,16 +38,20 @@ func NewBannedUser(userSignup *toolchainv1alpha1.UserSignup, bannedBy string) (*
 	return bannedUser, nil
 }
 
-// IsAlreadyBanned checks if the user was already banned
-func IsAlreadyBanned(ctx context.Context, userEmailHash string, hostClient client.Client, hostNamespace string) (bool, error) {
+// GetBannedUser returns BannedUser with the provided user email hash if found. Otherwise it returns nil.
+func GetBannedUser(ctx context.Context, userEmailHash string, hostClient client.Client, hostNamespace string) (*toolchainv1alpha1.BannedUser, error) {
 	emailHashLabelMatch := client.MatchingLabels(map[string]string{
 		toolchainv1alpha1.BannedUserEmailHashLabelKey: userEmailHash,
 	})
 	bannedUsers := &toolchainv1alpha1.BannedUserList{}
 
 	if err := hostClient.List(ctx, bannedUsers, emailHashLabelMatch, client.InNamespace(hostNamespace)); err != nil {
-		return false, err
+		return nil, err
 	}
 
-	return len(bannedUsers.Items) > 0, nil
+	if len(bannedUsers.Items) > 0 {
+		return &bannedUsers.Items[0], nil
+	}
+
+	return nil, nil
 }

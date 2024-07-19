@@ -111,7 +111,7 @@ func TestNewBannedUser(t *testing.T) {
 	}
 }
 
-func TestIsAlreadyBanned(t *testing.T) {
+func TestGetBannedUser(t *testing.T) {
 	userSignup1 := commonsignup.NewUserSignup(commonsignup.WithName("johny"), commonsignup.WithEmail("johny@example.com"))
 	userSignup2 := commonsignup.NewUserSignup(commonsignup.WithName("bob"), commonsignup.WithEmail("bob@example.com"))
 	userSignup3 := commonsignup.NewUserSignup(commonsignup.WithName("oliver"), commonsignup.WithEmail("oliver@example.com"))
@@ -129,28 +129,28 @@ func TestIsAlreadyBanned(t *testing.T) {
 	tests := []struct {
 		name       string
 		toBan      *toolchainv1alpha1.BannedUser
-		wantResult bool
+		wantResult *toolchainv1alpha1.BannedUser
 		wantError  bool
 		fakeClient *test.FakeClient
 	}{
 		{
 			name:       "user is already banned",
 			toBan:      bannedUser1,
-			wantResult: true,
+			wantResult: bannedUser1,
 			wantError:  false,
 			fakeClient: fakeClient,
 		},
 		{
 			name:       "user is not banned",
 			toBan:      bannedUser2,
-			wantResult: false,
+			wantResult: nil,
 			wantError:  false,
 			fakeClient: fakeClient,
 		},
 		{
 			name:       "cannot list banned users because the client does have type v1alpha1.BannedUserList registered in the scheme",
 			toBan:      bannedUser3,
-			wantResult: false,
+			wantResult: nil,
 			wantError:  true,
 			fakeClient: &test.FakeClient{Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(), T: t},
 		},
@@ -158,7 +158,7 @@ func TestIsAlreadyBanned(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotResult, err := IsAlreadyBanned(ctx, tt.toBan.Labels[toolchainv1alpha1.BannedUserEmailHashLabelKey], tt.fakeClient, test.HostOperatorNs)
+			gotResult, err := GetBannedUser(ctx, tt.toBan.Labels[toolchainv1alpha1.BannedUserEmailHashLabelKey], tt.fakeClient, test.HostOperatorNs)
 
 			if tt.wantError {
 				require.Error(t, err)
