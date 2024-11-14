@@ -54,7 +54,7 @@ func TestNewClient(t *testing.T) {
 			require.NoError(t, fclient.Update(context.TODO(), created))
 			require.NoError(t, fclient.Get(context.TODO(), types.NamespacedName{Namespace: "somenamespace", Name: created.Name}, retrieved))
 			assert.Equal(t, "value", retrieved.StringData["key"])
-			assert.EqualValues(t, 1, retrieved.Generation) // Generation updated
+			assert.EqualValues(t, 1, retrieved.Generation) // Generation not updated
 		})
 
 		t.Run("update object with data", func(t *testing.T) {
@@ -109,11 +109,27 @@ func TestNewClient(t *testing.T) {
 			assert.EqualValues(t, 1, retrieved.Generation) // Generation updated
 		})
 
-		t.Run("status update", func(t *testing.T) {
-			created, retrieved := createAndGetSecret(t, fclient)
+		t.Run("no error in blank status update", func(t *testing.T) {
+			created, retrieved := createAndGetDeployment(t, fclient)
 			require.NoError(t, fclient.Status().Update(context.TODO(), created))
 			require.NoError(t, fclient.Get(context.TODO(), types.NamespacedName{Namespace: "somenamespace", Name: created.Name}, retrieved))
-			assert.EqualValues(t, 1, retrieved.Generation) // Generation not changed
+			assert.EqualValues(t, 1, retrieved.Generation) // Generation not changed, since blank update
+		})
+
+		t.Run("status update with actual update in status", func(t *testing.T) {
+			created, retrieved := createAndGetDeployment(t, fclient)
+			created.Status.Replicas = 2
+			require.NoError(t, fclient.Status().Update(context.TODO(), created))
+			require.NoError(t, fclient.Get(context.TODO(), types.NamespacedName{Namespace: "somenamespace", Name: created.Name}, retrieved))
+			assert.EqualValues(t, 2, retrieved.Status.Replicas) // replicas count changed to 2
+		})
+
+		t.Run("status update fails when the objects being updated doesn't have status", func(t *testing.T) {
+			created, _ := createAndGetSecret(t, fclient)
+			err := fclient.Status().Update(context.TODO(), created)
+			require.Error(t, err)
+			errString := "secrets \"" + created.Name + "\" not found"
+			require.EqualError(t, err, errString)
 		})
 
 		t.Run("patch", func(t *testing.T) {
@@ -137,6 +153,11 @@ func TestNewClient(t *testing.T) {
 			depPatch := client.MergeFrom(retrieved.DeepCopy())
 			retrieved.Status.Replicas = 1
 			require.NoError(t, fclient.Status().Patch(context.TODO(), retrieved, depPatch))
+		})
+
+		t.Run("status create fails", func(t *testing.T) {
+			_, retrieved := createAndGetDeployment(t, fclient)
+			require.EqualError(t, fclient.Status().Create(context.TODO(), retrieved, retrieved), "fakeSubResourceWriter does not support create for status")
 		})
 
 		t.Run("delete", func(t *testing.T) {
@@ -227,18 +248,26 @@ func TestNewClient(t *testing.T) {
 
 		t.Run("mock Status Update", func(t *testing.T) {
 			defer func() { fclient.MockStatusUpdate = nil }()
-			fclient.MockStatusUpdate = func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+			fclient.MockStatusUpdate = func(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
 				return expectedErr
 			}
-			require.EqualError(t, fclient.MockStatusUpdate(context.TODO(), &v1.Secret{}), expectedErr.Error())
+			require.EqualError(t, fclient.Status().Update(context.TODO(), &v1.Secret{}), expectedErr.Error())
 		})
 
 		t.Run("mock Status Patch", func(t *testing.T) {
 			defer func() { fclient.MockStatusPatch = nil }()
-			fclient.MockStatusPatch = func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+			fclient.MockStatusPatch = func(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
 				return expectedErr
 			}
-			require.EqualError(t, fclient.MockStatusPatch(context.TODO(), &v1.Secret{}, client.RawPatch(types.MergePatchType, []byte{})), expectedErr.Error())
+			require.EqualError(t, fclient.Status().Patch(context.TODO(), &v1.Secret{}, client.RawPatch(types.MergePatchType, []byte{})), expectedErr.Error())
+		})
+
+		t.Run("mock Status Create", func(t *testing.T) {
+			defer func() { fclient.MockStatusCreate = nil }()
+			fclient.MockStatusCreate = func(ctx context.Context, obj client.Object, subResoource client.Object, opts ...client.SubResourceCreateOption) error {
+				return expectedErr
+			}
+			require.EqualError(t, fclient.Status().Create(context.TODO(), &v1.Secret{}, nil), expectedErr.Error())
 		})
 	})
 }
