@@ -11,13 +11,15 @@ import (
 type CreateOption func(*toolchainv1alpha1.SpaceProvisionerConfig)
 
 func NewSpaceProvisionerConfig(name string, namespace string, opts ...CreateOption) *toolchainv1alpha1.SpaceProvisionerConfig {
-	spc := &toolchainv1alpha1.SpaceProvisionerConfig{
+	return ModifySpaceProvisionerConfig(&toolchainv1alpha1.SpaceProvisionerConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-	}
+	}, opts...)
+}
 
+func ModifySpaceProvisionerConfig(spc *toolchainv1alpha1.SpaceProvisionerConfig, opts ...CreateOption) *toolchainv1alpha1.SpaceProvisionerConfig {
 	for _, apply := range opts {
 		apply(spc)
 	}
@@ -74,5 +76,26 @@ func MaxNumberOfSpaces(number uint) CreateOption {
 func MaxMemoryUtilizationPercent(number uint) CreateOption {
 	return func(spc *toolchainv1alpha1.SpaceProvisionerConfig) {
 		spc.Spec.CapacityThresholds.MaxMemoryUtilizationPercent = number
+	}
+}
+
+func WithConsumedSpaceCount(value int) CreateOption {
+	return func(spc *toolchainv1alpha1.SpaceProvisionerConfig) {
+		if spc.Status.ConsumedCapacity == nil {
+			spc.Status.ConsumedCapacity = &toolchainv1alpha1.ConsumedCapacity{}
+		}
+		spc.Status.ConsumedCapacity.SpaceCount = value
+	}
+}
+
+func WithConsumedMemoryUsagePercentInNode(role string, usage int) CreateOption {
+	return func(spc *toolchainv1alpha1.SpaceProvisionerConfig) {
+		if spc.Status.ConsumedCapacity == nil {
+			spc.Status.ConsumedCapacity = &toolchainv1alpha1.ConsumedCapacity{}
+		}
+		if spc.Status.ConsumedCapacity.MemoryUsagePercentPerNodeRole == nil {
+			spc.Status.ConsumedCapacity.MemoryUsagePercentPerNodeRole = map[string]int{}
+		}
+		spc.Status.ConsumedCapacity.MemoryUsagePercentPerNodeRole[role] = usage
 	}
 }
