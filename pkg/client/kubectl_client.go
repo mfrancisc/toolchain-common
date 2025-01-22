@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	v1extensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -97,6 +100,7 @@ type KubectlResourceOperations struct {
 	streams             genericclioptions.IOStreams
 	extensionsclientset *clientset.Clientset
 	dynamicClient       dynamic.Interface
+	stdInLock           sync.Mutex
 }
 
 func NewKubectlResourceOperations(factory cmdutil.Factory, ioStreams genericclioptions.IOStreams, config *rest.Config, dynamicClient dynamic.Interface) (*KubectlResourceOperations, error) {
@@ -330,11 +334,25 @@ func (k *KubectlResourceOperations) ApplyResource(obj *unstructured.Unstructured
 func (k *KubectlResourceOperations) newApplyOptions(obj *unstructured.Unstructured, validate bool, force, serverSideApply bool, manager string) error {
 	cmd := apply.NewCmdApply("kubectl", k.fact, k.streams)
 	flags := apply.NewApplyFlags(k.fact, k.streams)
-	o, err := flags.ToOptions(cmd, "kubectl", []string{})
+	flags.DeleteFlags.FileNameFlags.Filenames = &[]string{"-"}
+	o, err := flags.ToOptions(cmd, "kubectl", nil)
 	if err != nil {
 		return err
 	}
 	o.Builder = k.fact.NewBuilder().Stream(k.streams.In, "input")
+
+	k.stdInLock.Lock()
+
+	replacedStdin, err := pumpToStdin(k.streams.In)
+	if err != nil {
+		k.stdInLock.Unlock()
+		return err
+	}
+
+	defer func() {
+		replacedStdin.Release()
+		k.stdInLock.Unlock()
+	}()
 
 	return o.Run()
 }
@@ -447,4 +465,32 @@ func (k *KubectlResourceOperations) authReconcile(obj *unstructured.Unstructured
 		out = append(out, buf)
 	}
 	return strings.Join(out, ". "), nil
+}
+
+type replacedStdin struct {
+	orig *os.File
+}
+
+func pumpToStdin(data io.Reader) (*replacedStdin, error) {
+	stdinRead, stdinWrite, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+
+	f := &replacedStdin{orig: os.Stdin}
+
+	os.Stdin = stdinRead
+
+	if _, err = io.Copy(stdinWrite, data); err != nil {
+		os.Stdin = f.orig
+		return nil, err
+	}
+
+	return f, nil
+}
+
+func (f *replacedStdin) Release() {
+	if f.orig != nil {
+		os.Stdin = f.orig
+	}
 }

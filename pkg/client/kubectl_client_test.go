@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"testing"
 
+	toolchainv1alpha1 "github.com/codeready-toolchain/api/api/v1alpha1"
 	"github.com/codeready-toolchain/toolchain-common/pkg/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +53,6 @@ func TestKubectlResourceOperations_ApplyUnstructuredObject(t *testing.T) {
 			UpdateCalls: 0,
 			CreateCalls: 0,
 		}, counter)
-
 	})
 
 	t.Run("should update service account from unstructured object", func(t *testing.T) {
@@ -88,29 +88,32 @@ func TestKubectlResourceOperations_ApplyUnstructuredObject(t *testing.T) {
 		}, counter)
 	})
 
-	//t.Run("when replace annotation is set it should replace service account", func(t *testing.T) {
-	//	// given
-	//	// the replace annotation is configured
-	//	newsa := &unstructured.Unstructured{
-	//		Object: map[string]interface{}{
-	//			"kind": "ServiceAccount",
-	//			"metadata": map[string]interface{}{
-	//				"name":      "test1",
-	//				"namespace": "test",
-	//				"annotations": map[string]interface{}{
-	//					toolchainv1alpha1.LabelKeyPrefix + "sync-options": client.SyncOptionReplace,
-	//				},
-	//			},
-	//			"apiVersion": "v1",
-	//		},
-	//	}
-	//
-	//	// when
-	//	applied, err := kubectlapply.ApplyUnstructuredObject(context.TODO(), newsa, nil, false, true, "") // secret refs are still there
-	//	require.NoError(t, err)
-	//	assert.True(t, applied)
-	//	assert.Equal(t, "serviceaccount/test1 configured\n", buf.String())
-	//})
+	t.Run("when replace annotation is set it should replace service account", func(t *testing.T) {
+		// given
+		fakeHTTPClient, _ := newFakeHTTPClient(t, nil, nil)
+		buf, kubectlapply, cleanup := InitNewTestFactory(t, sa, fakeHTTPClient)
+		defer cleanup()
+		// the replace annotation is configured
+		newsa := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"kind": "ServiceAccount",
+				"metadata": map[string]interface{}{
+					"name":      "test1",
+					"namespace": "test",
+					"annotations": map[string]interface{}{
+						toolchainv1alpha1.LabelKeyPrefix + "sync-options": client.SyncOptionReplace,
+					},
+				},
+				"apiVersion": "v1",
+			},
+		}
+
+		// when
+		applied, err := kubectlapply.ApplyUnstructuredObject(context.TODO(), newsa, nil, false, true, "") // secret refs are still there
+		require.NoError(t, err)
+		assert.True(t, applied)
+		assert.Equal(t, "serviceaccount/test1 configured\n", buf.String())
+	})
 }
 
 type MethodCounter struct {
