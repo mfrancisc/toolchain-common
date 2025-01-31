@@ -17,7 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestCache(t *testing.T) {
@@ -318,7 +318,7 @@ func TestMultipleExecutionsInParallel(t *testing.T) {
 	latch.Add(1)
 	var waitForFinished sync.WaitGroup
 	initconfig := NewToolchainConfigObjWithReset(t, testconfig.Members().SpecificPerMemberCluster("member", toolchainv1alpha1.MemberOperatorConfigSpec{
-		Environment: pointer.String("env"),
+		Environment: ptr.To("env"),
 	}))
 
 	secret := &v1.Secret{
@@ -353,7 +353,7 @@ func TestMultipleExecutionsInParallel(t *testing.T) {
 			defer waitForFinished.Done()
 			latch.Wait()
 			config := NewToolchainConfigObjWithReset(t, testconfig.Members().SpecificPerMemberCluster(fmt.Sprintf("member%d", i), toolchainv1alpha1.MemberOperatorConfigSpec{
-				Environment: pointer.String(fmt.Sprintf("env%d", i)),
+				Environment: ptr.To(fmt.Sprintf("env%d", i)),
 			}))
 
 			secretData := map[string]map[string]string{
