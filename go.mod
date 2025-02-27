@@ -24,13 +24,14 @@ require (
 )
 
 require (
-	github.com/codeready-toolchain/api v0.0.0-20250131222557-beba5463f429
+	github.com/codeready-toolchain/api v0.0.0-20250227073728-5999971adb48
 	github.com/ghodss/yaml v1.0.0
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-github/v52 v52.0.0
 	github.com/google/uuid v1.6.0
 	github.com/migueleliasweb/go-github-mock v0.0.18
 	github.com/prometheus/client_golang v1.18.0
+	github.com/prometheus/client_model v0.5.0
 	golang.org/x/oauth2 v0.12.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/kubectl v0.29.2
@@ -86,7 +87,6 @@ require (
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.45.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
