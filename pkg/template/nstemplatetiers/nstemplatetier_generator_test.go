@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"testing"
 	texttemplate "text/template"
@@ -17,8 +18,6 @@ import (
 	commonclient "github.com/codeready-toolchain/toolchain-common/pkg/client"
 	"github.com/codeready-toolchain/toolchain-common/pkg/test"
 	"github.com/pkg/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -141,12 +140,10 @@ func getTestTemplates(t *testing.T) map[string][]byte {
 }
 
 func TestGenerateTiers(t *testing.T) {
-
 	s := addToScheme(t)
 	logf.SetLogger(zap.New(zap.UseDevMode(true)))
 
 	t.Run("ok", func(t *testing.T) {
-
 		expectedTemplateRefs := map[string]map[string]interface{}{
 			"advanced": {
 				"clusterresources": "advanced-clusterresources-abcd123-654321a",
@@ -280,6 +277,15 @@ func TestGenerateTiers(t *testing.T) {
 			// when
 			err := GenerateTiers(s, ensureObjectFuncForClient(clt), namespace, getTestMetadata(), getTestTemplates(t))
 			require.NoError(t, err)
+			// here we're just capturing the state after the first call so that we can compare with the state after the second call
+			tierTmpls := toolchainv1alpha1.TierTemplateList{}
+			err = clt.List(context.TODO(), &tierTmpls, runtimeclient.InNamespace(namespace))
+			require.NoError(t, err)
+			require.Len(t, tierTmpls.Items, 16) // 4 items for advanced and base tiers + 3 for nocluster tier + 4 for appstudio
+			origTemplates := map[string]*toolchainv1alpha1.TierTemplate{}
+			for _, tmpl := range tierTmpls.Items {
+				origTemplates[tmpl.Name] = tmpl.DeepCopy()
+			}
 
 			// when calling CreateOrUpdateResources a second time
 			err = GenerateTiers(s, ensureObjectFuncForClient(clt), namespace, getTestMetadata(), getTestTemplates(t))
@@ -287,15 +293,19 @@ func TestGenerateTiers(t *testing.T) {
 			// then
 			require.NoError(t, err)
 			// verify that all TierTemplate CRs were updated
-			tierTmpls := toolchainv1alpha1.TierTemplateList{}
+			tierTmpls = toolchainv1alpha1.TierTemplateList{}
 			err = clt.List(context.TODO(), &tierTmpls, runtimeclient.InNamespace(namespace))
 			require.NoError(t, err)
 			require.Len(t, tierTmpls.Items, 16) // 4 items for advanced and base tiers + 3 for nocluster tier + 4 for appstudio
+			// check that the tier templates are unchanged
 			for _, tierTmpl := range tierTmpls.Items {
-				assert.Equal(t, int64(1), tierTmpl.Generation) // unchanged
-			}
-
-			// verify that 4 NSTemplateTier CRs were created:
+				// these two should always mean the same thing. If they don't, it means there's an issue with serde of
+				// the templates where template json -> object in cluster -> template json doesn't yield the same thing.
+				// (the json reprentation is used to detect generation change in our test.Client).
+				// This is usually caused by e.g explicitly using a zero value of some property in the template file.
+				assert.True(t, reflect.DeepEqual(origTemplates[tierTmpl.Name].Spec, tierTmpl.Spec), "deep equal different on %T %s", tierTmpl, tierTmpl.Name)
+				assert.Equal(t, int64(1), tierTmpl.Generation, "generation different on %T %s", tierTmpl, tierTmpl.Name) // unchanged
+			} // verify that 4 NSTemplateTier CRs were created:
 			for _, tierName := range []string{"advanced", "base", "nocluster", "appstudio"} {
 				tier := toolchainv1alpha1.NSTemplateTier{}
 				err = clt.Get(context.TODO(), types.NamespacedName{Namespace: namespace, Name: tierName}, &tier)
@@ -446,27 +456,25 @@ func TestGenerateTiers(t *testing.T) {
 	})
 
 	t.Run("failures", func(t *testing.T) {
-
 		namespace := "host-operator" + uuid.NewString()[:7]
 
 		t.Run("nstemplatetiers", func(t *testing.T) {
-
-			t.Run("failed to create nstemplatetiers", func(t *testing.T) {
+			t.Run("failed to patch nstemplatetiers", func(t *testing.T) {
 				// given
 				clt := test.NewFakeClient(t)
-				clt.MockCreate = func(ctx context.Context, obj runtimeclient.Object, opts ...runtimeclient.CreateOption) error {
-					if obj.GetObjectKind().GroupVersionKind().Kind == "NSTemplateTier" {
+				clt.MockPatch = func(ctx context.Context, obj runtimeclient.Object, patch runtimeclient.Patch, opts ...runtimeclient.PatchOption) error {
+					if _, ok := obj.(*toolchainv1alpha1.NSTemplateTier); ok {
 						// simulate a client/server error
 						return errors.Errorf("an error")
 					}
-					return clt.Client.Create(ctx, obj, opts...)
+					return test.Patch(ctx, clt, obj, patch, opts...)
 				}
 
 				// when
 				err := GenerateTiers(s, ensureObjectFuncForClient(clt), namespace, getTestMetadata(), getTestTemplates(t))
 				// then
 				require.Error(t, err)
-				assert.Regexp(t, "unable to create or update the '\\w+' NSTemplateTier: unable to create resource of kind: NSTemplateTier, version: v1alpha1: an error", err.Error())
+				assert.Regexp(t, "unable to create NSTemplateTiers: unable to create or update the '\\w+' NSTemplateTier: unable to patch 'toolchain.dev.openshift.com/v1alpha1, Kind=NSTemplateTier' called '\\w+' in namespace '[a-zA-Z0-9-]+': an error", err.Error())
 			})
 
 			t.Run("missing tier.yaml file", func(t *testing.T) {
@@ -481,40 +489,15 @@ func TestGenerateTiers(t *testing.T) {
 				require.EqualError(t, err, "unable to init NSTemplateTier generator: tier appstudio is missing a tier.yaml file")
 			})
 
-			t.Run("failed to update nstemplatetiers", func(t *testing.T) {
-				// given
-				// initialize the client with an existing `advanced` NSTemplatetier
-				clt := test.NewFakeClient(t, &toolchainv1alpha1.NSTemplateTier{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: namespace,
-						Name:      "advanced",
-					},
-				})
-				clt.MockUpdate = func(ctx context.Context, obj runtimeclient.Object, opts ...runtimeclient.UpdateOption) error {
-					if obj.GetObjectKind().GroupVersionKind().Kind == "NSTemplateTier" {
-						// simulate a client/server error
-						return errors.Errorf("an error")
-					}
-					return clt.Client.Update(ctx, obj, opts...)
-				}
-
-				// when
-				err := GenerateTiers(s, ensureObjectFuncForClient(clt), namespace, getTestMetadata(), getTestTemplates(t))
-
-				// then
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), "unable to create NSTemplateTiers: unable to create or update the 'advanced' NSTemplateTier: unable to create resource of kind: NSTemplateTier, version: v1alpha1: unable to update the resource")
-			})
-
-			t.Run("failed to create nstemplatetiers", func(t *testing.T) {
+			t.Run("failed to patch nstemplatetiers", func(t *testing.T) {
 				// given
 				clt := test.NewFakeClient(t)
-				clt.MockCreate = func(ctx context.Context, obj runtimeclient.Object, opts ...runtimeclient.CreateOption) error {
+				clt.MockPatch = func(ctx context.Context, obj runtimeclient.Object, patch runtimeclient.Patch, opts ...runtimeclient.PatchOption) error {
 					if _, ok := obj.(*toolchainv1alpha1.TierTemplate); ok {
 						// simulate a client/server error
 						return errors.Errorf("an error")
 					}
-					return clt.Client.Create(ctx, obj, opts...)
+					return test.Patch(ctx, clt, obj, patch, opts...)
 				}
 
 				// when
@@ -529,7 +512,6 @@ func TestGenerateTiers(t *testing.T) {
 }
 
 func TestLoadTemplatesByTiers(t *testing.T) {
-
 	logf.SetLogger(zap.New(zap.UseDevMode(true)))
 
 	t.Run("ok", func(t *testing.T) {
@@ -591,7 +573,6 @@ func TestLoadTemplatesByTiers(t *testing.T) {
 	})
 
 	t.Run("failures", func(t *testing.T) {
-
 		t.Run("unparseable content", func(t *testing.T) {
 			// given
 			testTemplates := getTestTemplates(t)
@@ -663,13 +644,11 @@ func TestLoadTemplatesByTiers(t *testing.T) {
 }
 
 func TestNewNSTemplateTier(t *testing.T) {
-
 	s := scheme.Scheme
 	err := toolchainv1alpha1.AddToScheme(s)
 	require.NoError(t, err)
 
 	t.Run("ok", func(t *testing.T) {
-
 		t.Run("with test assets", func(t *testing.T) {
 			// given
 			namespace := "host-operator-" + uuid.NewString()[:7]
@@ -740,7 +719,6 @@ func TestNewTierTemplate(t *testing.T) {
 	namespace := "host-operator-" + uuid.NewString()[:7]
 
 	t.Run("ok", func(t *testing.T) {
-
 		t.Run("with test assets", func(t *testing.T) {
 			// given
 
@@ -780,7 +758,6 @@ func TestNewTierTemplate(t *testing.T) {
 	})
 
 	t.Run("failures", func(t *testing.T) {
-
 		t.Run("invalid template", func(t *testing.T) {
 			// given
 			testTemplates := getTestTemplates(t)
@@ -796,15 +773,9 @@ func TestNewTierTemplate(t *testing.T) {
 }
 
 func ensureObjectFuncForClient(cl runtimeclient.Client) EnsureObject {
-	return func(toEnsure runtimeclient.Object, canUpdate bool, _ string) (bool, error) {
-		if !canUpdate {
-			if err := cl.Create(context.TODO(), toEnsure); err != nil && !apierrors.IsAlreadyExists(err) {
-				return false, err
-			}
-			return true, nil
-		}
-		applyCl := commonclient.NewApplyClient(cl)
-		return applyCl.ApplyObject(context.TODO(), toEnsure, commonclient.ForceUpdate(true))
+	return func(toEnsure runtimeclient.Object, _ string) error {
+		applyCl := commonclient.NewSSAApplyClient(cl, "testFieldManager")
+		return applyCl.ApplyObject(context.TODO(), toEnsure)
 	}
 }
 
@@ -862,7 +833,6 @@ func expectedTemplateFromBasedOnTierConfig(t *testing.T, tier, templateFileName 
 }
 
 func TestNewNSTemplateTiers(t *testing.T) {
-
 	// given
 	s := addToScheme(t)
 
