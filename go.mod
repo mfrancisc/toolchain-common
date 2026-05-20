@@ -26,7 +26,7 @@ require (
 )
 
 require (
-	github.com/codeready-toolchain/api v0.0.0-20260504080314-cf8d9a0df564
+	github.com/codeready-toolchain/api v0.0.0-20260519092313-bf8b47375d38
 	github.com/ghodss/yaml v1.0.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v52 v52.0.0
